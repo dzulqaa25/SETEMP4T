@@ -1,0 +1,233 @@
+@import "tailwindcss";
+
+:root {
+  --brown-deep: #3b2216;
+  --brown-primary: #5c3724;
+  --brown-mid: #7c4d34;
+  --brown-caramel: #9c6644;
+  --brown-soft: #f5ebe1;
+  --bg-warm: #f1e5d6;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Background Bertekstur Hangat dengan Efek Cahaya Dinamis */
+body {
+  background-color: var(--bg-warm);
+  background-image:
+    radial-gradient(at 10% 12%, rgba(140, 82, 48, 0.22) 0px, transparent 48%),
+    radial-gradient(at 90% 18%, rgba(186, 122, 76, 0.24) 0px, transparent 46%),
+    radial-gradient(at 50% 88%, rgba(92, 55, 36, 0.18) 0px, transparent 52%),
+    radial-gradient(rgba(92, 55, 36, 0.13) 1.2px, transparent 1.2px),
+    linear-gradient(155deg, #f7efe6 0%, #ede0d0 50%, #e3d0b9 100%);
+  background-size: 100% 100%, 100% 100%, 100% 100%, 22px 22px, 100% 100%;
+  background-attachment: fixed;
+  color: #2b1d14;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    sans-serif;
+  font-weight: 400;
+  letter-spacing: -0.005em;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* Pastikan seluruh teks tampil simpel, bersih, dan tidak tebal */
+h1,
+h2,
+h3,
+h4,
+strong,
+b,
+th,
+.font-black,
+.font-extrabold,
+.font-bold {
+  font-weight: 500 !important;
+}
+
+.font-semibold {
+  font-weight: 400 !important;
+}
+
+@media (max-width: 768px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Efek Coklat Ber-Shade dengan Animasi Gradient Halus */
+@keyframes gradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.hero-mesh {
+  background: linear-gradient(
+    130deg,
+    #2d180e 0%,
+    #52301e 35%,
+    #7c4d34 70%,
+    #4e2e1d 100%
+  );
+  background-size: 200% 200%;
+  animation: gradientShift 9s ease infinite;
+  box-shadow:
+    0 12px 28px -6px rgba(59, 34, 22, 0.35),
+    inset 0 1px 1px rgba(255, 235, 215, 0.22);
+}
+
+/* Tombol Coklat Ber-Shade dengan Efek Kilau (Shine) & Hover Lift */
+.brown-shade-btn {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(145deg, #75462e 0%, #4e2e1d 55%, #381f12 100%);
+  box-shadow:
+    0 4px 14px -2px rgba(74, 44, 29, 0.35),
+    inset 0 1px 0 rgba(255, 235, 220, 0.25);
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 220ms ease;
+}
+
+.brown-shade-btn:hover {
+  transform: translateY(-2px);
+  background: linear-gradient(145deg, #865237 0%, #5c3724 55%, #462819 100%);
+  box-shadow:
+    0 8px 20px -3px rgba(74, 44, 29, 0.45),
+    inset 0 1px 0 rgba(255, 235, 220, 0.35);
+}
+
+.brown-shade-btn:active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* Kartu Elegan dengan Animasi Hover Lift */
+.card-elevated {
+  background: #fffcf8;
+  border: 1px solid #dfd0bf;
+  box-shadow: 0 3px 12px -2px rgba(59, 34, 22, 0.07);
+  transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 200ms ease;
+}
+
+.card-elevated:hover {
+  transform: translateY(-3px);
+  border-color: #b89778;
+  box-shadow:
+    0 10px 24px -6px rgba(59, 34, 22, 0.14),
+    0 2px 6px -1px rgba(92, 55, 36, 0.08);
+}
+
+/* Keyframes Animasi Masuk & Interaksi */
+@keyframes fadeUpSpring {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes scalePop {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes floatSlow {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeUpSpring 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-slideLeft {
+  animation: slideInLeft 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-sheet {
+  animation: scalePop 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-float {
+  animation: floatSlow 4s ease-in-out infinite;
+}
+
+/* Staggered Delay untuk Daftar Item */
+.stagger-1 {
+  animation-delay: 40ms;
+}
+.stagger-2 {
+  animation-delay: 80ms;
+}
+.stagger-3 {
+  animation-delay: 120ms;
+}
+.stagger-4 {
+  animation-delay: 160ms;
+}
+.stagger-5 {
+  animation-delay: 200ms;
+}
+.stagger-6 {
+  animation-delay: 240ms;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #ccb69f;
+  border-radius: 9999px;
+}
