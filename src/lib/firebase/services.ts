@@ -96,11 +96,18 @@ export async function getSharedState<T>(key: string): Promise<T | null> {
   try {
     const docRef = doc(db, COLLECTIONS.APP_STATE, key);
     const snap = await getDoc(docRef);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('setemp4t-firestore-ok'));
+    }
     if (snap.exists()) {
       return (snap.data()?.value as T) ?? null;
     }
     return null;
-  } catch (error) {
+  } catch (error: unknown) {
+    const code = (error as { code?: string })?.code;
+    if (code === 'permission-denied' && typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('setemp4t-firestore-permission-denied'));
+    }
     console.warn(`Firestore state read error on [${key}]:`, error);
     return null;
   }
@@ -118,8 +125,15 @@ export async function setSharedState<T>(
       sanitizeForFirestore({ value, updatedAt: new Date().toISOString() }),
       { merge: true }
     );
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('setemp4t-firestore-ok'));
+    }
     return true;
-  } catch (error) {
+  } catch (error: unknown) {
+    const code = (error as { code?: string })?.code;
+    if (code === 'permission-denied' && typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('setemp4t-firestore-permission-denied'));
+    }
     console.warn(`Firestore state write error on [${key}]:`, error);
     return false;
   }
@@ -135,11 +149,19 @@ export function subscribeSharedState<T>(
     const unsubscribe = onSnapshot(
       docRef,
       (snap) => {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event('setemp4t-firestore-ok'));
+        }
         if (snap.exists()) {
           onUpdate((snap.data()?.value as T) ?? null);
         }
       },
       (err) => {
+        if (err?.code === 'permission-denied' && typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new Event('setemp4t-firestore-permission-denied')
+          );
+        }
         console.warn(`Firestore onSnapshot error on [${key}]:`, err);
       }
     );

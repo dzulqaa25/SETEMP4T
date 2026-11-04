@@ -92,7 +92,7 @@ export function ProfilMahasiswaModule() {
       .get<Record<string, Record<BulanKey, boolean>>>(KAS_FIRESTORE_KEY)
       .then((cloudMap) => {
         if (cloudMap && typeof cloudMap === 'object') {
-          setCheckedMap((prev) => ({ ...prev, ...cloudMap }));
+          setCheckedMap({ ...initial, ...cloudMap });
         }
       })
       .catch(() => {});
@@ -109,6 +109,33 @@ export function ProfilMahasiswaModule() {
         }
       })
       .catch(() => {});
+
+    const unsubKas = FirebaseServices.sharedState.subscribe<
+      Record<string, Record<BulanKey, boolean>>
+    >(KAS_FIRESTORE_KEY, (cloudMap) => {
+      if (cloudMap && typeof cloudMap === 'object') {
+        setCheckedMap({ ...initial, ...cloudMap });
+      }
+    });
+
+    const unsubPeriode =
+      FirebaseServices.sharedState.subscribe<KasPeriodeConfig>(
+        KAS_PERIODE_FIRESTORE_KEY,
+        (cloudPeriode) => {
+          if (
+            cloudPeriode &&
+            Array.isArray(cloudPeriode.daftarBulan) &&
+            cloudPeriode.daftarBulan.length > 0
+          ) {
+            setPeriodeConfig(cloudPeriode);
+          }
+        }
+      );
+
+    return () => {
+      unsubKas();
+      unsubPeriode();
+    };
   }, [mahasiswaList]);
 
   // Nomor absen berdasarkan urutan NIM

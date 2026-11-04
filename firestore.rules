@@ -1,82 +1,8 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Helper functions
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
-    function getUserData() {
-      return get(/databases/$(database)/documents/mahasiswa/$(request.auth.uid)).data;
-    }
-
-    function isAdmin() {
-      return isAuthenticated() && (
-        getUserData().role in ['komti', 'wakomti', 'bendahara', 'sekretaris', 'admin']
-      );
-    }
-
-    function isBendaharaOrKomti() {
-      return isAuthenticated() && (
-        getUserData().role in ['komti', 'wakomti', 'bendahara', 'admin']
-      );
-    }
-
-    // 1. Entitas Mahasiswa (Buku Angkatan & Profil)
-    match /mahasiswa/{mahasiswaId} {
-      allow read: if isAuthenticated();
-      allow create, delete: if isAdmin();
-      allow update: if isAdmin() || request.auth.uid == mahasiswaId;
-    }
-
-    // 2. Entitas MataKuliah
-    match /mata_kuliah/{mkId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
-    }
-
-    // 3. Entitas Kelompok (Group Manager)
-    match /kelompok/{kelompokId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
-    }
-
-    // 4. Entitas PembayaranKas (Iuran Mahasiswa)
-    match /pembayaran_kas/{pembayaranId} {
-      allow read: if isAuthenticated();
-      allow write: if isBendaharaOrKomti();
-    }
-
-    // 5. Entitas TransaksiKas (Pemasukan & Pengeluaran Kas)
-    match /transaksi_kas/{transaksiId} {
-      allow read: if isAuthenticated();
-      allow write: if isBendaharaOrKomti();
-    }
-
-    // 6. Entitas Pengumuman (Portal Kelas)
-    match /pengumuman/{pengumumanId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
-    }
-
-    // 7. Entitas Jadwal (Kuliah, Praktikum, Kegiatan, Deadline)
-    match /jadwal/{jadwalId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
-    }
-
-    // 8. Entitas Dokumen (Manajemen Dokumen)
-    match /dokumen/{dokumenId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update, delete: if isAdmin() || resource.data.uploadedById == request.auth.uid;
-    }
-
-    // 9. Entitas RiwayatRandomisasi (Randomizer Kelompok)
-    match /riwayat_randomisasi/{riwayatId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update, delete: if isAdmin();
+    match /{document=**} {
+      allow read, write: if true;
     }
   }
 }

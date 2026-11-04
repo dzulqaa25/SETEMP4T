@@ -111,56 +111,66 @@ export function DashboardModule() {
   const [photoKet, setPhotoKet] = useState('');
   const [photoUrl, setPhotoUrl] = useState('');
 
-  // Muat slide foto dari localStorage & Cloud Firestore (setemp4t63)
+  // Muat & berlangganan real-time slide foto dari Cloud Firestore (setemp4t63)
   useEffect(() => {
-    let localTimestamp = 0;
     try {
       const saved = localStorage.getItem(PHOTO_SLIDER_STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
           setSlides(parsed);
-          localTimestamp = Date.now();
         } else if (
           parsed &&
           Array.isArray(parsed.items) &&
           parsed.items.length > 0
         ) {
           setSlides(parsed.items);
-          localTimestamp = parsed.updatedAt || 0;
         }
       }
     } catch {}
+
+    const applyCloudSlides = (
+      cloudData:
+        | { items: SlideFoto[]; updatedAt?: number }
+        | SlideFoto[]
+        | null
+    ) => {
+      if (!cloudData) return;
+      const items = Array.isArray(cloudData)
+        ? cloudData
+        : Array.isArray(cloudData.items)
+          ? cloudData.items
+          : null;
+      if (items && items.length > 0) {
+        setSlides(items);
+        try {
+          localStorage.setItem(
+            PHOTO_SLIDER_STORAGE_KEY,
+            JSON.stringify({
+              items,
+              updatedAt:
+                (!Array.isArray(cloudData) && cloudData.updatedAt) ||
+                Date.now(),
+            })
+          );
+        } catch {}
+      }
+    };
 
     FirebaseServices.sharedState
       .get<{ items: SlideFoto[]; updatedAt?: number } | SlideFoto[]>(
         'gallery_slides'
       )
-      .then((cloudData) => {
-        if (!cloudData) return;
-        if (Array.isArray(cloudData) && cloudData.length > 0) {
-          if (!localTimestamp) setSlides(cloudData);
-        } else if (
-          !Array.isArray(cloudData) &&
-          Array.isArray(cloudData.items) &&
-          cloudData.items.length > 0
-        ) {
-          const cloudTs = cloudData.updatedAt || 0;
-          if (cloudTs >= localTimestamp) {
-            setSlides(cloudData.items);
-            try {
-              localStorage.setItem(
-                PHOTO_SLIDER_STORAGE_KEY,
-                JSON.stringify({
-                  items: cloudData.items,
-                  updatedAt: cloudTs,
-                })
-              );
-            } catch {}
-          }
-        }
-      })
+      .then(applyCloudSlides)
       .catch(() => {});
+
+    const unsubSlides = FirebaseServices.sharedState.subscribe<
+      { items: SlideFoto[]; updatedAt?: number } | SlideFoto[]
+    >('gallery_slides', applyCloudSlides);
+
+    return () => {
+      unsubSlides();
+    };
   }, []);
 
   // Auto-play slide setiap 4.5 detik

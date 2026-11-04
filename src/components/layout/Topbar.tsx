@@ -69,6 +69,21 @@ export function Topbar({ onOpenMobileMenu }: { onOpenMobileMenu: () => void }) {
     useState<DeviceNotifPermission>('default');
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [readIds, setReadIds] = useState<Record<string, boolean>>({});
+  const [firestoreRulesLocked, setFirestoreRulesLocked] = useState(false);
+
+  useEffect(() => {
+    const onDenied = () => setFirestoreRulesLocked(true);
+    const onOk = () => setFirestoreRulesLocked(false);
+    window.addEventListener('setemp4t-firestore-permission-denied', onDenied);
+    window.addEventListener('setemp4t-firestore-ok', onOk);
+    return () => {
+      window.removeEventListener(
+        'setemp4t-firestore-permission-denied',
+        onDenied
+      );
+      window.removeEventListener('setemp4t-firestore-ok', onOk);
+    };
+  }, []);
 
   // Data kas mahasiswa untuk mengecek pengingat kas
   const [checkedMap, setCheckedMap] = useState<
@@ -669,6 +684,29 @@ export function Topbar({ onOpenMobileMenu }: { onOpenMobileMenu: () => void }) {
           </button>
         </div>
       </header>
+
+      {/* Peringatan Otomatis jika Rules Firestore di Firebase Console masih terkunci (Production Mode: if false) */}
+      {firestoreRulesLocked && isAdmin && (
+        <div className="bg-rose-50 border-b border-rose-200 px-4 py-3">
+          <div className="max-w-5xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-rose-900">
+            <div>
+              <b>Penting — Firestore Rules Masih Terkunci (Production Mode):</b>{' '}
+              Buka tab <b>Rules</b> di Firebase Console (`setemp4t63`), ubah{' '}
+              <code>allow read, write: if false;</code> menjadi{' '}
+              <code>allow read, write: if true;</code> lalu klik <b>Publish</b>{' '}
+              agar semua perubahan tersimpan ke server.
+            </div>
+            <a
+              href="https://console.firebase.google.com/project/setemp4t63/firestore/databases/-default-/rules"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-1.5 rounded-xl bg-rose-700 text-white text-xs shrink-0 hover:bg-rose-800 transition-colors text-center"
+            >
+              Buka Firestore Rules
+            </a>
+          </div>
+        </div>
+      )}
 
       {/* Banner Ajakan Aktifkan Notifikasi Device (muncul jika izin browser masih default) */}
       {notifPermission === 'default' && !bannerDismissed && (

@@ -389,14 +389,56 @@ export function KasKelasModule() {
     FirebaseServices.sharedState
       .get<Record<string, Record<string, boolean>>>(KAS_FIRESTORE_KEY)
       .then((cloudMap) => {
-        if (cloudMap && typeof cloudMap === 'object' && Object.keys(cloudMap).length > 0) {
-          setCheckedMap((prev) => ({ ...prev, ...cloudMap }));
+        if (
+          cloudMap &&
+          typeof cloudMap === 'object' &&
+          Object.keys(cloudMap).length > 0
+        ) {
+          setCheckedMap({ ...initial, ...cloudMap });
         } else {
           // Unggah data awal dari buku kas ke Firestore jika belum ada di cloud
           FirebaseServices.sharedState.set(KAS_FIRESTORE_KEY, initial);
         }
       })
       .catch(() => {});
+
+    // Langganan Real-time (onSnapshot) ke Cloud Firestore untuk Periode Kas & Checklist Kas
+    const unsubPeriode =
+      FirebaseServices.sharedState.subscribe<KasPeriodeConfig>(
+        KAS_PERIODE_FIRESTORE_KEY,
+        (cloudPeriode) => {
+          if (
+            cloudPeriode &&
+            Array.isArray(cloudPeriode.daftarBulan) &&
+            cloudPeriode.daftarBulan.length > 0
+          ) {
+            setPeriodeConfig(cloudPeriode);
+            try {
+              localStorage.setItem(
+                KAS_PERIODE_STORAGE_KEY,
+                JSON.stringify(cloudPeriode)
+              );
+            } catch {}
+          }
+        }
+      );
+
+    const unsubKasMap = FirebaseServices.sharedState.subscribe<
+      Record<string, Record<string, boolean>>
+    >(KAS_FIRESTORE_KEY, (cloudMap) => {
+      if (
+        cloudMap &&
+        typeof cloudMap === 'object' &&
+        Object.keys(cloudMap).length > 0
+      ) {
+        setCheckedMap({ ...initial, ...cloudMap });
+      }
+    });
+
+    return () => {
+      unsubPeriode();
+      unsubKasMap();
+    };
   }, [sortedMahasiswaByNim]);
 
   // Simpan perubahan checkbox yang sudah di-Save ke localStorage

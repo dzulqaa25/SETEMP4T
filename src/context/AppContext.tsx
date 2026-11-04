@@ -353,6 +353,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             'kelompok_state_v2'
           ),
           FirebaseServices.sharedState.get<Kelompok[]>('kelompok_list'),
+          FirebaseServices.sharedState.get<{ items: Mahasiswa[] }>(
+            'mahasiswa_state_v2'
+          ),
+          FirebaseServices.sharedState.get<{ items: MataKuliah[] }>(
+            'matakuliah_state_v2'
+          ),
           FirebaseServices.sharedState.get<Record<string, string>>(
             ACCOUNTS_FIRESTORE_KEY
           ),
@@ -367,6 +373,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               cloudTrxState,
               cloudKlpStateV2,
               cloudKlpShared,
+              cloudMhsState,
+              cloudMkState,
               cloudAccountsV2,
               cloudAccountsV1,
             ]) => {
@@ -378,6 +386,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               }
               if (cloudTrxState && Array.isArray(cloudTrxState.items)) {
                 setTransaksiKasList(cloudTrxState.items);
+              }
+              if (
+                cloudMhsState &&
+                Array.isArray(cloudMhsState.items) &&
+                cloudMhsState.items.length > 0
+              ) {
+                setMahasiswaList(
+                  [...cloudMhsState.items].sort((a, b) =>
+                    a.nim.localeCompare(b.nim)
+                  )
+                );
+              }
+              if (
+                cloudMkState &&
+                Array.isArray(cloudMkState.items) &&
+                cloudMkState.items.length > 0
+              ) {
+                setMataKuliahList(cloudMkState.items);
               }
               if (cloudKlpStateV2 && Array.isArray(cloudKlpStateV2.items)) {
                 setKelompokList(sanitizeKelompokList(cloudKlpStateV2.items));
@@ -421,7 +447,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Langganan Real-time (onSnapshot) ke Cloud Firestore untuk Pengumuman, Tugas Baru & Kelompok
+  // Langganan Real-time (onSnapshot) ke Cloud Firestore untuk Seluruh Data Kelas
   useEffect(() => {
     if (!isHydrated || !isFirebaseConfigured) return;
 
@@ -441,6 +467,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
+    const unsubTransaksi = FirebaseServices.sharedState.subscribe<{
+      items: TransaksiKas[];
+    }>('transaksi_state_v2', (data) => {
+      if (data && Array.isArray(data.items)) {
+        setTransaksiKasList(data.items);
+      }
+    });
+
     const unsubKelompokV2 = FirebaseServices.sharedState.subscribe<{
       items: Kelompok[];
     }>('kelompok_state_v2', (data) => {
@@ -449,10 +483,47 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
+    const unsubMahasiswa = FirebaseServices.sharedState.subscribe<{
+      items: Mahasiswa[];
+    }>('mahasiswa_state_v2', (data) => {
+      if (data && Array.isArray(data.items) && data.items.length > 0) {
+        setMahasiswaList(
+          [...data.items].sort((a, b) => a.nim.localeCompare(b.nim))
+        );
+      }
+    });
+
+    const unsubMataKuliah = FirebaseServices.sharedState.subscribe<{
+      items: MataKuliah[];
+    }>('matakuliah_state_v2', (data) => {
+      if (data && Array.isArray(data.items) && data.items.length > 0) {
+        setMataKuliahList(data.items);
+      }
+    });
+
+    const unsubAccounts = FirebaseServices.sharedState.subscribe<
+      Record<string, string>
+    >(ACCOUNTS_FIRESTORE_KEY, (data) => {
+      const cleaned = sanitizeAccountsMap(data);
+      if (Object.keys(cleaned).length > 0) {
+        setAccountsMap((prev) => {
+          const next = { ...prev, ...cleaned };
+          try {
+            localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(next));
+          } catch {}
+          return next;
+        });
+      }
+    });
+
     return () => {
       unsubPengumuman();
       unsubJadwal();
+      unsubTransaksi();
       unsubKelompokV2();
+      unsubMahasiswa();
+      unsubMataKuliah();
+      unsubAccounts();
     };
   }, [isHydrated]);
 
@@ -814,9 +885,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       createdAt: now,
       updatedAt: now,
     };
-    setMahasiswaList((prev) =>
-      [...prev, newMahasiswa].sort((a, b) => a.nim.localeCompare(b.nim))
-    );
+    setMahasiswaList((prev) => {
+      const next = [...prev, newMahasiswa].sort((a, b) =>
+        a.nim.localeCompare(b.nim)
+      );
+      FirebaseServices.sharedState.set('mahasiswa_state_v2', { items: next });
+      return next;
+    });
     const newKas: PembayaranKas = {
       id: `kas-okt-${newId}`,
       mahasiswaId: newId,
@@ -843,9 +918,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     const withTime = { ...updated, updatedAt: new Date().toISOString() };
-    setMahasiswaList((prev) =>
-      prev.map((m) => (m.id === updated.id ? withTime : m))
-    );
+    setMahasiswaList((prev) => {
+      const next = prev.map((m) => (m.id === updated.id ? withTime : m));
+      FirebaseServices.sharedState.set('mahasiswa_state_v2', { items: next });
+      return next;
+    });
     FirebaseServices.mahasiswa.save(withTime);
     showToast('Profil Disimpan');
   };
@@ -859,7 +936,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       );
       return;
     }
-    setMahasiswaList((prev) => prev.filter((m) => m.id !== id));
+    setMahasiswaList((prev) => {
+      const next = prev.filter((m) => m.id !== id);
+      FirebaseServices.sharedState.set('mahasiswa_state_v2', { items: next });
+      return next;
+    });
     setPembayaranKasList((prev) => prev.filter((p) => p.mahasiswaId !== id));
     FirebaseServices.mahasiswa.delete(id);
     showToast('Mahasiswa Dihapus', undefined, 'warning');
@@ -881,7 +962,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       role,
       updatedAt: new Date().toISOString(),
     };
-    setMahasiswaList((prev) => prev.map((m) => (m.id === id ? updated : m)));
+    setMahasiswaList((prev) => {
+      const next = prev.map((m) => (m.id === id ? updated : m));
+      FirebaseServices.sharedState.set('mahasiswa_state_v2', { items: next });
+      return next;
+    });
     FirebaseServices.mahasiswa.save(updated);
     showToast('Jabatan Diperbarui', `${target.namaPanggilan} -> ${role.toUpperCase()}`);
   };
@@ -893,24 +978,38 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       ...mk,
       id: `mk-${mk.kode.toLowerCase()}-${Date.now().toString().slice(-3)}`,
     };
-    setMataKuliahList((prev) => [...prev, newMk]);
+    setMataKuliahList((prev) => {
+      const next = [...prev, newMk];
+      FirebaseServices.sharedState.set('matakuliah_state_v2', { items: next });
+      return next;
+    });
     FirebaseServices.mataKuliah.save(newMk);
     showToast('Mata Kuliah Ditambahkan', mk.nama);
   };
 
   const updateMataKuliah = (mk: MataKuliah) => {
     if (!isAdmin) return;
-    setMataKuliahList((prev) =>
-      prev.map((item) => (item.id === mk.id ? mk : item))
-    );
+    setMataKuliahList((prev) => {
+      const next = prev.map((item) => (item.id === mk.id ? mk : item));
+      FirebaseServices.sharedState.set('matakuliah_state_v2', { items: next });
+      return next;
+    });
     FirebaseServices.mataKuliah.save(mk);
     showToast('Mata Kuliah Diperbarui');
   };
 
   const deleteMataKuliah = (id: string) => {
     if (!isAdmin) return;
-    setMataKuliahList((prev) => prev.filter((m) => m.id !== id));
-    setKelompokList((prev) => prev.filter((k) => k.mataKuliahId !== id));
+    setMataKuliahList((prev) => {
+      const next = prev.filter((m) => m.id !== id);
+      FirebaseServices.sharedState.set('matakuliah_state_v2', { items: next });
+      return next;
+    });
+    setKelompokList((prev) => {
+      const next = prev.filter((k) => k.mataKuliahId !== id);
+      FirebaseServices.sharedState.set('kelompok_state_v2', { items: next });
+      return next;
+    });
     FirebaseServices.mataKuliah.delete(id);
     showToast('Mata Kuliah Dihapus', undefined, 'warning');
   };
