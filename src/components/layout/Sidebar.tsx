@@ -18,13 +18,14 @@ import {
 const NAV_ITEMS: {
   id: ActiveModuleId;
   label: string;
+  sublabel: string;
   icon: React.ComponentType<{ className?: string }>;
 }[] = [
-  { id: 'dashboard', label: 'Beranda', icon: Home },
-  { id: 'kas-kelas', label: 'Kas', icon: Wallet },
-  { id: 'group-manager', label: 'Kelompok', icon: UsersRound },
-  { id: 'profil-mahasiswa', label: 'Profil', icon: UserCircle },
-  { id: 'panel-admin', label: 'Admin', icon: KeyRound },
+  { id: 'dashboard', label: 'Beranda', sublabel: 'Home & Schedule', icon: Home },
+  { id: 'kas-kelas', label: 'Kas Kelas', sublabel: 'Class Treasury', icon: Wallet },
+  { id: 'group-manager', label: 'Kelompok', sublabel: 'Study Groups', icon: UsersRound },
+  { id: 'profil-mahasiswa', label: 'Profil', sublabel: 'Student Profile', icon: UserCircle },
+  { id: 'panel-admin', label: 'Admin', sublabel: 'Admin Access', icon: KeyRound },
 ];
 
 export function Sidebar({
@@ -85,9 +86,19 @@ export function Sidebar({
                       : 'text-stone-700 hover:bg-[#f5ebe1] hover:text-[#3b2216]'
                   )}
                 >
-                  <div className="flex items-center gap-3">
-                    <Icon className="w-4 h-4" />
-                    <span>{item.label}</span>
+                  <div className="flex items-center gap-3 text-left">
+                    <Icon className="w-4 h-4 shrink-0" />
+                    <div>
+                      <div className="leading-tight">{item.label}</div>
+                      <div
+                        className={cn(
+                          'text-[10px] leading-tight mt-0.5',
+                          isActive ? 'text-amber-100/80' : 'text-stone-400'
+                        )}
+                      >
+                        {item.sublabel}
+                      </div>
+                    </div>
                   </div>
                   {item.id === 'panel-admin' && isAdmin && (
                     <span

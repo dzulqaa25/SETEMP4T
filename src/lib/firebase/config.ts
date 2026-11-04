@@ -4,21 +4,25 @@ import { getFirestore, Firestore } from 'firebase/firestore';
 import { getStorage, FirebaseStorage } from 'firebase/storage';
 
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  apiKey:
+    process.env.NEXT_PUBLIC_FIREBASE_API_KEY ||
+    'AIzaSyDyYHJOYq1vc8nqffio5aog-XRCr0pYnvw',
+  authDomain:
+    process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN ||
+    'setemp4t63.firebaseapp.com',
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'setemp4t63',
+  storageBucket:
+    process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ||
+    'setemp4t63.firebasestorage.app',
+  messagingSenderId:
+    process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '741846807618',
+  appId:
+    process.env.NEXT_PUBLIC_FIREBASE_APP_ID ||
+    '1:741846807618:web:e1af540eaa7d278a1d29db',
 };
 
-/**
- * Mengecek apakah kredensial Firebase nyata sudah dikonfigurasi di .env.local
- */
 export const isFirebaseConfigured = Boolean(
-  firebaseConfig.apiKey &&
-    firebaseConfig.apiKey !== 'AIzaSyYourApiKeyHere' &&
-    firebaseConfig.projectId
+  firebaseConfig.apiKey && firebaseConfig.projectId
 );
 
 let app: FirebaseApp | null = null;
@@ -33,7 +37,7 @@ if (isFirebaseConfigured) {
     db = getFirestore(app);
     storage = getStorage(app);
   } catch (error) {
-    console.warn('Gagal menginisialisasi Firebase, beralih ke Hybrid Local Mode:', error);
+    console.warn('Gagal menginisialisasi Firebase:', error);
   }
 }
 

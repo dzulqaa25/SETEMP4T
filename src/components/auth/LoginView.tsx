@@ -2,45 +2,68 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '@/context/AppContext';
-import { Button, Input } from '@/components/ui';
-import { KeyRound, UserCheck, ArrowRight, Eye, EyeOff } from 'lucide-react';
+import { Badge, Button, Input } from '@/components/ui';
+import {
+  KeyRound,
+  UserCheck,
+  ArrowRight,
+  Eye,
+  EyeOff,
+  Lock,
+  Sparkles,
+} from 'lucide-react';
 
 export function LoginView() {
   const {
     mahasiswaList,
     lastSavedNim,
     findMahasiswaByNim,
+    isAccountLocked,
+    syncAccountsFromCloud,
     loginOrRegister,
     unlockAdminWithKey,
   } = useApp();
 
-  const [nimInput, setNimInput] = useState('A2401261152');
+  // Kosong di device baru, hanya terisi jika device ini sebelumnya pernah login
+  const [nimInput, setNimInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
   const [adminKeyInput, setAdminKeyInput] = useState('');
   const [showAdminField, setShowAdminField] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
+  // Sinkronisasi daftar akun terkunci dari Cloud Firestore saat halaman login dibuka
+  useEffect(() => {
+    syncAccountsFromCloud();
+  }, [syncAccountsFromCloud]);
+
+  // Jika device ini sudah pernah login sebelumnya, ingat NIM terakhir di device ini saja
   useEffect(() => {
     if (lastSavedNim) {
       setNimInput(lastSavedNim);
     }
   }, [lastSavedNim]);
 
+  const sortedMahasiswaByNim = useMemo(
+    () => [...mahasiswaList].sort((a, b) => a.nim.localeCompare(b.nim)),
+    [mahasiswaList]
+  );
+
   const matchedStudent = useMemo(() => {
     if (!nimInput.trim()) return undefined;
     return findMahasiswaByNim(nimInput);
   }, [nimInput, findMahasiswaByNim]);
 
-  const executeLogin = () => {
-    const ok = loginOrRegister(nimInput, passwordInput || 'st04');
-    if (ok && adminKeyInput.trim()) {
-      unlockAdminWithKey(adminKeyInput);
-    }
-  };
+  const matchedNimLocked = useMemo(() => {
+    if (!matchedStudent) return false;
+    return isAccountLocked(matchedStudent.nim);
+  }, [matchedStudent, isAccountLocked]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    executeLogin();
+    const ok = loginOrRegister(nimInput, passwordInput);
+    if (ok && adminKeyInput.trim()) {
+      unlockAdminWithKey(adminKeyInput);
+    }
   };
 
   return (
@@ -48,8 +71,8 @@ export function LoginView() {
       <div className="w-full max-w-sm card-elevated rounded-3xl overflow-hidden shadow-xl animate-sheet">
         {/* Header Brand SETEMP4T */}
         <div className="hero-mesh px-6 py-7 text-center text-white">
-          <div className="text-xl font-medium tracking-wide">SETEMP4T</div>
-          <p className="text-xs text-amber-100/85 mt-1 font-normal">
+          <div className="text-xl tracking-wide">SETEMP4T</div>
+          <p className="text-xs text-amber-100/85 mt-1">
             Portal Kelas ST04 • IPB University
           </p>
         </div>
@@ -58,8 +81,8 @@ export function LoginView() {
           {/* Input Username (NIM) */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-bold text-stone-700">
-                Username (NIM)
+              <label className="text-xs text-stone-700">
+                Username (NIM) • Student ID
               </label>
               <select
                 aria-label="Pilih nama mahasiswa"
@@ -67,53 +90,83 @@ export function LoginView() {
                 onChange={(e) => {
                   if (e.target.value) {
                     setNimInput(e.target.value);
+                    setPasswordInput('');
                   }
                 }}
-                className="text-[11px] text-[#5c3724] font-bold bg-transparent focus:outline-none cursor-pointer max-w-[180px] truncate"
+                className="text-[11px] text-[#5c3724] bg-transparent focus:outline-none cursor-pointer max-w-[185px] truncate"
               >
-                <option value="">Pilih dari Daftar Nama...</option>
-                {mahasiswaList.map((m) => (
+                <option value="">Pilih Nama Mahasiswa...</option>
+                {sortedMahasiswaByNim.map((m, idx) => (
                   <option key={m.id} value={m.nim}>
-                    {m.namaLengkap} ({m.nim})
+                    {idx + 1}. {m.namaLengkap} ({m.nim})
                   </option>
                 ))}
               </select>
             </div>
             <Input
-              placeholder="Ketik NIM (contoh: A2401261152)"
+              placeholder="Ketik NIM Anda (contoh: G3401261048)"
               value={nimInput}
               onChange={(e) => setNimInput(e.target.value.toUpperCase())}
               className="font-mono uppercase"
+              autoComplete="username"
             />
           </div>
 
-          {/* Indikator Mahasiswa Ditemukan */}
+          {/* Indikator Mahasiswa Ditemukan & Status Kunci Password */}
           {matchedStudent && (
-            <div className="p-3 rounded-xl bg-[#f5ebe1] border border-[#d8be9f] flex items-center gap-2.5 animate-fadeIn">
-              <UserCheck className="w-4 h-4 text-[#5c3724] shrink-0" />
-              <div className="min-w-0">
-                <div className="text-xs font-extrabold text-[#3b2216] truncate">
-                  {matchedStudent.namaLengkap}
+            <div className="p-3 rounded-xl bg-[#f5ebe1] border border-[#d8be9f] space-y-2 animate-fadeIn">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <UserCheck className="w-4 h-4 text-[#5c3724] shrink-0" />
+                  <div className="min-w-0">
+                    <div className="text-xs text-[#2d180e] truncate">
+                      {matchedStudent.namaLengkap}
+                    </div>
+                    <div className="text-[11px] text-stone-600 truncate">
+                      {matchedStudent.programStudi}
+                    </div>
+                  </div>
                 </div>
-                <div className="text-[11px] text-stone-600 truncate">
-                  {matchedStudent.programStudi}
-                </div>
+                {matchedNimLocked ? (
+                  <Badge variant="ipb" className="shrink-0">
+                    <Lock className="w-3 h-3 mr-1" />
+                    Locked
+                  </Badge>
+                ) : (
+                  <Badge variant="info" className="shrink-0">
+                    <Sparkles className="w-3 h-3 mr-1" />
+                    First Login
+                  </Badge>
+                )}
+              </div>
+
+              <div className="text-[11px] text-[#5c3724] border-t border-[#e2ccb2] pt-1.5">
+                {matchedNimLocked
+                  ? 'Akun ini sudah dikunci password. Masukkan password yang telah dibuat untuk masuk.'
+                  : 'Akun ini belum memiliki password. Buat password baru (min. 4 karakter) untuk mengunci akun Anda.'}
               </div>
             </div>
           )}
 
           {/* Input Password */}
           <div>
-            <label className="block text-xs font-bold text-stone-700 mb-1.5">
-              Password
+            <label className="block text-xs text-stone-700 mb-1.5">
+              {matchedNimLocked
+                ? 'Password Akun Terkunci'
+                : 'Buat / Masukkan Password'}
             </label>
             <div className="relative">
               <Input
                 type={showPassword ? 'text' : 'password'}
-                placeholder="Buat / masukkan password..."
+                placeholder={
+                  matchedNimLocked
+                    ? 'Masukkan password akun Anda...'
+                    : 'Buat password baru (min. 4 karakter)...'
+                }
                 value={passwordInput}
                 onChange={(e) => setPasswordInput(e.target.value)}
                 className="pr-10"
+                autoComplete="current-password"
               />
               <button
                 type="button"
@@ -129,7 +182,7 @@ export function LoginView() {
               </button>
             </div>
             <p className="text-[11px] text-stone-500 mt-1">
-              Login otomatis diingat di browser ini.
+              Sesi login diingat khusus di perangkat (browser) Anda masing-masing.
             </p>
           </div>
 
@@ -138,7 +191,7 @@ export function LoginView() {
             <button
               type="button"
               onClick={() => setShowAdminField((prev) => !prev)}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#5c3724] hover:underline cursor-pointer"
+              className="inline-flex items-center gap-1.5 text-xs text-[#5c3724] hover:underline cursor-pointer"
             >
               <KeyRound className="w-3.5 h-3.5" />
               <span>
@@ -165,10 +218,13 @@ export function LoginView() {
             type="submit"
             variant="primary"
             size="lg"
-            onClick={executeLogin}
             className="w-full"
           >
-            <span>Masuk ke SETEMP4T</span>
+            <span>
+              {matchedStudent && !matchedNimLocked
+                ? 'Kunci Password & Masuk'
+                : 'Masuk ke SETEMP4T'}
+            </span>
             <ArrowRight className="w-4 h-4" />
           </Button>
         </form>

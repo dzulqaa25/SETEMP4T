@@ -1,11 +1,13 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   setDoc,
   deleteDoc,
   query,
   orderBy,
+  onSnapshot,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage, isFirebaseConfigured } from './config';
@@ -21,9 +23,6 @@ import {
   TransaksiKas,
 } from '@/types/database';
 
-/**
- * Nama Koleksi Firestore yang Dinormalisasi
- */
 export const COLLECTIONS = {
   MAHASISWA: 'mahasiswa',
   MATA_KULIAH: 'mata_kuliah',
@@ -34,11 +33,16 @@ export const COLLECTIONS = {
   JADWAL: 'jadwal',
   DOKUMEN: 'dokumen',
   RIWAYAT_RANDOMISASI: 'riwayat_randomisasi',
+  APP_STATE: 'app_state',
 } as const;
 
 /**
- * Generic Firestore CRUD Helper dengan fallback otomatis jika berjalan di mode lokal
+ * Bersihkan properti bernilai undefined agar Firestore tidak menolak dokumen
  */
+function sanitizeForFirestore<T>(obj: T): T {
+  return JSON.parse(JSON.stringify(obj));
+}
+
 export async function fetchCollectionData<T>(
   collectionName: string,
   orderByField?: string
@@ -46,7 +50,9 @@ export async function fetchCollectionData<T>(
   if (!isFirebaseConfigured || !db) return null;
   try {
     const colRef = collection(db, collectionName);
-    const q = orderByField ? query(colRef, orderBy(orderByField, 'desc')) : colRef;
+    const q = orderByField
+      ? query(colRef, orderBy(orderByField, 'desc'))
+      : colRef;
     const snapshot = await getDocs(q);
     return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }) as T);
   } catch (error) {
@@ -62,7 +68,7 @@ export async function upsertDocument<T extends { id: string }>(
   if (!isFirebaseConfigured || !db) return false;
   try {
     const docRef = doc(db, collectionName, data.id);
-    await setDoc(docRef, data, { merge: true });
+    await setDoc(docRef, sanitizeForFirestore(data), { merge: true });
     return true;
   } catch (error) {
     console.warn(`Firestore write error on [${collectionName}/${data.id}]:`, error);
@@ -85,15 +91,70 @@ export async function removeDocument(
   }
 }
 
-/**
- * Upload file ke Firebase Storage (Dokumen / Lampiran / Foto Profil)
- */
+export async function getSharedState<T>(key: string): Promise<T | null> {
+  if (!isFirebaseConfigured || !db) return null;
+  try {
+    const docRef = doc(db, COLLECTIONS.APP_STATE, key);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      return (snap.data()?.value as T) ?? null;
+    }
+    return null;
+  } catch (error) {
+    console.warn(`Firestore state read error on [${key}]:`, error);
+    return null;
+  }
+}
+
+export async function setSharedState<T>(
+  key: string,
+  value: T
+): Promise<boolean> {
+  if (!isFirebaseConfigured || !db) return false;
+  try {
+    const docRef = doc(db, COLLECTIONS.APP_STATE, key);
+    await setDoc(
+      docRef,
+      sanitizeForFirestore({ value, updatedAt: new Date().toISOString() }),
+      { merge: true }
+    );
+    return true;
+  } catch (error) {
+    console.warn(`Firestore state write error on [${key}]:`, error);
+    return false;
+  }
+}
+
+export function subscribeSharedState<T>(
+  key: string,
+  onUpdate: (value: T | null) => void
+): () => void {
+  if (!isFirebaseConfigured || !db) return () => {};
+  try {
+    const docRef = doc(db, COLLECTIONS.APP_STATE, key);
+    const unsubscribe = onSnapshot(
+      docRef,
+      (snap) => {
+        if (snap.exists()) {
+          onUpdate((snap.data()?.value as T) ?? null);
+        }
+      },
+      (err) => {
+        console.warn(`Firestore onSnapshot error on [${key}]:`, err);
+      }
+    );
+    return unsubscribe;
+  } catch (error) {
+    console.warn(`Firestore subscribe error on [${key}]:`, error);
+    return () => {};
+  }
+}
+
 export async function uploadFileToStorage(
   file: File,
   folderPath: string
 ): Promise<string> {
   if (!isFirebaseConfigured || !storage) {
-    // Fallback URL lokal (Blob URL) untuk mode demo interaktif
     return URL.createObjectURL(file);
   }
   const safeName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
@@ -102,9 +163,6 @@ export async function uploadFileToStorage(
   return await getDownloadURL(snapshot.ref);
 }
 
-/**
- * Service Spesifik Entitas Database Tongkrongan ST04
- */
 export const FirebaseServices = {
   mahasiswa: {
     getAll: () => fetchCollectionData<Mahasiswa>(COLLECTIONS.MAHASISWA),
@@ -123,13 +181,15 @@ export const FirebaseServices = {
   },
   pembayaranKas: {
     getAll: () => fetchCollectionData<PembayaranKas>(COLLECTIONS.PEMBAYARAN_KAS),
-    save: (item: PembayaranKas) => upsertDocument(COLLECTIONS.PEMBAYARAN_KAS, item),
+    save: (item: PembayaranKas) =>
+      upsertDocument(COLLECTIONS.PEMBAYARAN_KAS, item),
     delete: (id: string) => removeDocument(COLLECTIONS.PEMBAYARAN_KAS, id),
   },
   transaksiKas: {
     getAll: () =>
       fetchCollectionData<TransaksiKas>(COLLECTIONS.TRANSAKSI_KAS, 'tanggal'),
-    save: (item: TransaksiKas) => upsertDocument(COLLECTIONS.TRANSAKSI_KAS, item),
+    save: (item: TransaksiKas) =>
+      upsertDocument(COLLECTIONS.TRANSAKSI_KAS, item),
     delete: (id: string) => removeDocument(COLLECTIONS.TRANSAKSI_KAS, id),
   },
   pengumuman: {
@@ -157,6 +217,12 @@ export const FirebaseServices = {
       ),
     save: (item: RiwayatRandomisasi) =>
       upsertDocument(COLLECTIONS.RIWAYAT_RANDOMISASI, item),
-    delete: (id: string) => removeDocument(COLLECTIONS.RIWAYAT_RANDOMISASI, id),
+    delete: (id: string) =>
+      removeDocument(COLLECTIONS.RIWAYAT_RANDOMISASI, id),
+  },
+  sharedState: {
+    get: getSharedState,
+    set: setSharedState,
+    subscribe: subscribeSharedState,
   },
 };

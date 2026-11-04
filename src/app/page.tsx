@@ -13,8 +13,17 @@ import { AdminPanelModule } from '@/components/modules/AdminPanelModule';
 import { CheckCircle2, Info, AlertTriangle, X } from 'lucide-react';
 
 export default function HomePage() {
-  const { activeModule, isLoggedIn, toasts, dismissToast } = useApp();
+  const { activeModule, isLoggedIn, isHydrated, toasts, dismissToast } =
+    useApp();
   const [menuOpen, setMenuOpen] = useState(false);
+
+  if (!isHydrated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="text-xs text-[#5c3724]">Memuat sesi perangkat...</div>
+      </div>
+    );
+  }
 
   const renderActiveModule = () => {
     switch (activeModule) {

@@ -2,7 +2,12 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '@/context/AppContext';
-import { KategoriPengumuman, PrioritasPengumuman } from '@/types/database';
+import {
+  Jadwal,
+  KategoriPengumuman,
+  Pengumuman,
+  PrioritasPengumuman,
+} from '@/types/database';
 import {
   Badge,
   Button,
@@ -13,12 +18,14 @@ import {
   Textarea,
 } from '@/components/ui';
 import { formatTanggalIndo } from '@/lib/utils';
+import { FirebaseServices } from '@/lib/firebase/services';
 import {
   Clock,
   MapPin,
   CheckCircle2,
   Circle,
   Plus,
+  Pencil,
   Trash2,
   ClipboardList,
   Megaphone,
@@ -45,28 +52,28 @@ const INITIAL_SLIDES: SlideFoto[] = [
   {
     id: 'slide-1',
     judul: 'Foto Bersama Keluarga Besar SETEMP4T (ST04)',
-    keterangan: 'Dokumentasi kebersamaan kelas ST04 di Gedung CCR IPB Dramaga',
+    keterangan: 'Class Moments & Memories • Gedung CCR IPB Dramaga',
     imageUrl:
       'https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=1200&q=80',
   },
   {
     id: 'slide-2',
     judul: 'Momen Kuliah & Responsi Semester 1',
-    keterangan: 'Suasana belajar bareng dan diskusi kelompok SETEMP4T',
+    keterangan: 'Study Sessions & Group Discussions • SETEMP4T',
     imageUrl:
       'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=1200&q=80',
   },
   {
     id: 'slide-3',
     judul: 'Praktikum Biologi Dasar di Lab Biologi',
-    keterangan: 'Kegiatan praktikum BIO2102 (P7) hari Rabu bersama rekan ST04',
+    keterangan: 'Biology Lab Session • BIO2102 (P7) Wednesday Class',
     imageUrl:
       'https://images.unsplash.com/photo-1532094349884-543bc11b234d?auto=format&fit=crop&w=1200&q=80',
   },
   {
     id: 'slide-4',
     judul: 'Tongkrongan & Kebersamaan SETEMP4T',
-    keterangan: 'Slot foto bersama acara angkatan dan kumpul kelas ST04 berikutnya',
+    keterangan: 'Next Class Gathering • Upload your class photos here',
     imageUrl:
       'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=1200&q=80',
   },
@@ -79,8 +86,10 @@ export function DashboardModule() {
     pengumumanList,
     jadwalList,
     addJadwal,
+    updateJadwal,
     deleteJadwal,
     addPengumuman,
+    updatePengumuman,
     deletePengumuman,
     isAdmin,
     showToast,
@@ -102,17 +111,56 @@ export function DashboardModule() {
   const [photoKet, setPhotoKet] = useState('');
   const [photoUrl, setPhotoUrl] = useState('');
 
-  // Muat slide foto dari localStorage
+  // Muat slide foto dari localStorage & Cloud Firestore (setemp4t63)
   useEffect(() => {
+    let localTimestamp = 0;
     try {
       const saved = localStorage.getItem(PHOTO_SLIDER_STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
           setSlides(parsed);
+          localTimestamp = Date.now();
+        } else if (
+          parsed &&
+          Array.isArray(parsed.items) &&
+          parsed.items.length > 0
+        ) {
+          setSlides(parsed.items);
+          localTimestamp = parsed.updatedAt || 0;
         }
       }
     } catch {}
+
+    FirebaseServices.sharedState
+      .get<{ items: SlideFoto[]; updatedAt?: number } | SlideFoto[]>(
+        'gallery_slides'
+      )
+      .then((cloudData) => {
+        if (!cloudData) return;
+        if (Array.isArray(cloudData) && cloudData.length > 0) {
+          if (!localTimestamp) setSlides(cloudData);
+        } else if (
+          !Array.isArray(cloudData) &&
+          Array.isArray(cloudData.items) &&
+          cloudData.items.length > 0
+        ) {
+          const cloudTs = cloudData.updatedAt || 0;
+          if (cloudTs >= localTimestamp) {
+            setSlides(cloudData.items);
+            try {
+              localStorage.setItem(
+                PHOTO_SLIDER_STORAGE_KEY,
+                JSON.stringify({
+                  items: cloudData.items,
+                  updatedAt: cloudTs,
+                })
+              );
+            } catch {}
+          }
+        }
+      })
+      .catch(() => {});
   }, []);
 
   // Auto-play slide setiap 4.5 detik
@@ -124,39 +172,81 @@ export function DashboardModule() {
     return () => clearInterval(timer);
   }, [isPaused, activeView, slides.length]);
 
-  const saveSlidesToStorage = (nextSlides: SlideFoto[]) => {
-    setSlides(nextSlides);
+  const persistSlides = (nextSlides: SlideFoto[]) => {
+    const payload = { items: nextSlides, updatedAt: Date.now() };
     try {
-      localStorage.setItem(
-        PHOTO_SLIDER_STORAGE_KEY,
-        JSON.stringify(nextSlides)
-      );
+      localStorage.setItem(PHOTO_SLIDER_STORAGE_KEY, JSON.stringify(payload));
     } catch {}
+    FirebaseServices.sharedState.set('gallery_slides', payload);
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Kompres gambar otomatis agar ukuran kecil (~50-75KB) sehingga bisa simpan banyak foto di localStorage & Firestore
+  const compressImageFile = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Gagal membaca file'));
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error('Gagal memuat gambar'));
+        img.onload = () => {
+          const MAX_W = 1080;
+          const MAX_H = 720;
+          let width = img.width;
+          let height = img.height;
+          if (width > MAX_W || height > MAX_H) {
+            const ratio = Math.min(MAX_W / width, MAX_H / height);
+            width = Math.round(width * ratio);
+            height = Math.round(height * ratio);
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve(reader.result as string);
+            return;
+          }
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.68);
+          resolve(compressedDataUrl);
+        };
+        img.src = reader.result as string;
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setPhotoUrl(reader.result);
-      }
-    };
-    reader.readAsDataURL(file);
+    try {
+      const compressed = await compressImageFile(file);
+      setPhotoUrl(compressed);
+    } catch {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          setPhotoUrl(reader.result);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleAddSlide = (e: React.FormEvent) => {
     e.preventDefault();
     if (!photoUrl.trim()) return;
     const newSlide: SlideFoto = {
-      id: `slide-${Date.now()}`,
+      id: `slide-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       judul: photoJudul.trim() || 'Foto Bersama SETEMP4T',
-      keterangan: photoKet.trim() || 'Momen kebersamaan kelas ST04',
+      keterangan: photoKet.trim() || 'Class Moments • ST04',
       imageUrl: photoUrl.trim(),
     };
-    const next = [newSlide, ...slides];
-    saveSlidesToStorage(next);
+    setSlides((prev) => {
+      const next = [newSlide, ...prev];
+      persistSlides(next);
+      return next;
+    });
     setCurrentSlide(0);
     setPhotoJudul('');
     setPhotoKet('');
@@ -168,14 +258,18 @@ export function DashboardModule() {
   const handleDeleteCurrentSlide = () => {
     if (slides.length <= 1) return;
     const target = slides[currentSlide];
-    const next = slides.filter((s) => s.id !== target.id);
-    saveSlidesToStorage(next);
+    setSlides((prev) => {
+      const next = prev.filter((s) => s.id !== target.id);
+      persistSlides(next);
+      return next;
+    });
     setCurrentSlide(0);
     showToast('Foto Dihapus dari Slide', undefined, 'info');
   };
 
-  // Modal Tambah Tugas
+  // Modal Tambah / Edit Tugas
   const [openTaskModal, setOpenTaskModal] = useState(false);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [taskJudul, setTaskJudul] = useState('');
   const [taskDeskripsi, setTaskDeskripsi] = useState('');
   const [taskMkId, setTaskMkId] = useState('mk-statistika');
@@ -186,8 +280,9 @@ export function DashboardModule() {
   const [taskWaktu, setTaskWaktu] = useState('23:59');
   const [taskLokasi, setTaskLokasi] = useState('LMS IPB');
 
-  // Modal Tambah Pengumuman
+  // Modal Tambah / Edit Pengumuman
   const [openPengModal, setOpenPengModal] = useState(false);
+  const [editingPengId, setEditingPengId] = useState<string | null>(null);
   const [pengJudul, setPengJudul] = useState('');
   const [pengIsi, setPengIsi] = useState('');
   const [pengKategori, setPengKategori] =
@@ -229,39 +324,120 @@ export function DashboardModule() {
     );
   };
 
+  // Buka Modal Tambah Tugas Baru
+  const handleOpenNewTask = () => {
+    setEditingTaskId(null);
+    setTaskJudul('');
+    setTaskDeskripsi('');
+    setTaskMkId('mk-statistika');
+    setTaskTanggal(new Date().toISOString().slice(0, 10));
+    setTaskHari('Jumat');
+    setTaskWaktu('23:59');
+    setTaskLokasi('LMS IPB');
+    setOpenTaskModal(true);
+  };
+
+  // Buka Modal Edit Tugas
+  const handleOpenEditTask = (t: Jadwal) => {
+    setEditingTaskId(t.id);
+    setTaskJudul(t.judul);
+    setTaskDeskripsi(t.deskripsi || '');
+    setTaskMkId(t.mataKuliahId || 'mk-statistika');
+    setTaskTanggal(t.tanggal);
+    setTaskHari(t.hari);
+    setTaskWaktu(t.waktuMulai);
+    setTaskLokasi(t.lokasi);
+    setOpenTaskModal(true);
+  };
+
   const handleSaveTask = (e: React.FormEvent) => {
     e.preventDefault();
     if (!taskJudul.trim()) return;
-    addJadwal({
-      judul: taskJudul.trim(),
-      deskripsi: taskDeskripsi.trim(),
-      jenis: 'Deadline tugas',
-      mataKuliahId: taskMkId,
-      tanggal: taskTanggal,
-      hari: taskHari,
-      waktuMulai: taskWaktu,
-      waktuSelesai: taskWaktu,
-      lokasi: taskLokasi.trim(),
-    });
+    if (editingTaskId) {
+      updateJadwal({
+        id: editingTaskId,
+        judul: taskJudul.trim(),
+        deskripsi: taskDeskripsi.trim(),
+        jenis: 'Deadline tugas',
+        mataKuliahId: taskMkId,
+        tanggal: taskTanggal,
+        hari: taskHari,
+        waktuMulai: taskWaktu,
+        waktuSelesai: taskWaktu,
+        lokasi: taskLokasi.trim(),
+      });
+    } else {
+      addJadwal({
+        judul: taskJudul.trim(),
+        deskripsi: taskDeskripsi.trim(),
+        jenis: 'Deadline tugas',
+        mataKuliahId: taskMkId,
+        tanggal: taskTanggal,
+        hari: taskHari,
+        waktuMulai: taskWaktu,
+        waktuSelesai: taskWaktu,
+        lokasi: taskLokasi.trim(),
+      });
+    }
+    setEditingTaskId(null);
     setTaskJudul('');
     setTaskDeskripsi('');
     setOpenTaskModal(false);
   };
 
+  // Buka Modal Tambah Pengumuman Baru
+  const handleOpenNewPengumuman = () => {
+    setEditingPengId(null);
+    setPengJudul('');
+    setPengIsi('');
+    setPengKategori('Akademik');
+    setPengPrioritas('Tinggi');
+    setOpenPengModal(true);
+  };
+
+  // Buka Modal Edit Pengumuman
+  const handleOpenEditPengumuman = (p: Pengumuman) => {
+    setEditingPengId(p.id);
+    setPengJudul(p.judul);
+    setPengIsi(p.isi);
+    setPengKategori(p.kategori);
+    setPengPrioritas(p.prioritas);
+    setOpenPengModal(true);
+  };
+
   const handleSavePengumuman = (e: React.FormEvent) => {
     e.preventDefault();
     if (!pengJudul.trim() || !pengIsi.trim()) return;
-    addPengumuman({
-      judul: pengJudul.trim(),
-      isi: pengIsi.trim(),
-      tanggal: new Date().toISOString().slice(0, 10),
-      kategori: pengKategori,
-      prioritas: pengPrioritas,
-      lampiran: [],
-      penulisId: currentUser.id,
-      penulisNama: currentUser.namaPanggilan,
-      penulisRole: currentUser.role,
-    });
+
+    if (editingPengId) {
+      const existing = pengumumanList.find((item) => item.id === editingPengId);
+      updatePengumuman({
+        id: editingPengId,
+        judul: pengJudul.trim(),
+        isi: pengIsi.trim(),
+        tanggal: existing?.tanggal || new Date().toISOString().slice(0, 10),
+        kategori: pengKategori,
+        prioritas: pengPrioritas,
+        lampiran: existing?.lampiran || [],
+        penulisId: existing?.penulisId || currentUser.id,
+        penulisNama: existing?.penulisNama || currentUser.namaPanggilan,
+        penulisRole: existing?.penulisRole || currentUser.role,
+      });
+    } else {
+      addPengumuman({
+        judul: pengJudul.trim(),
+        isi: pengIsi.trim(),
+        tanggal: new Date().toISOString().slice(0, 10),
+        kategori: pengKategori,
+        prioritas: pengPrioritas,
+        lampiran: [],
+        penulisId: currentUser.id,
+        penulisNama: currentUser.namaPanggilan,
+        penulisRole: currentUser.role,
+      });
+    }
+
+    setEditingPengId(null);
     setPengJudul('');
     setPengIsi('');
     setOpenPengModal(false);
@@ -297,27 +473,29 @@ export function DashboardModule() {
             <div className="absolute top-3.5 left-4 right-4 flex items-center justify-between gap-2">
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/40 backdrop-blur-xs border border-amber-200/25 text-amber-100 text-xs">
                 <Camera className="w-3.5 h-3.5 text-amber-300" />
-                <span>Galeri Foto Bersama SETEMP4T</span>
+                <span>Class Gallery • SETEMP4T</span>
               </div>
 
-              <div className="flex items-center gap-1.5">
-                {isAdmin && slides.length > 1 && (
+              {isAdmin && (
+                <div className="flex items-center gap-1.5">
+                  {slides.length > 1 && (
+                    <button
+                      onClick={handleDeleteCurrentSlide}
+                      className="p-1.5 rounded-full bg-black/45 hover:bg-rose-600/80 text-white border border-white/20 transition-colors cursor-pointer"
+                      title="Hapus Foto Ini"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                   <button
-                    onClick={handleDeleteCurrentSlide}
-                    className="p-1.5 rounded-full bg-black/45 hover:bg-rose-600/80 text-white border border-white/20 transition-colors cursor-pointer"
-                    title="Hapus Foto Ini"
+                    onClick={() => setOpenPhotoModal(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/90 hover:bg-white text-[#3b2216] text-xs transition-all cursor-pointer shadow-xs"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <ImagePlus className="w-3.5 h-3.5 text-[#5c3724]" />
+                    <span>Add Photo</span>
                   </button>
-                )}
-                <button
-                  onClick={() => setOpenPhotoModal(true)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/90 hover:bg-white text-[#3b2216] text-xs transition-all cursor-pointer shadow-xs"
-                >
-                  <ImagePlus className="w-3.5 h-3.5 text-[#5c3724]" />
-                  <span>Tambah Foto</span>
-                </button>
-              </div>
+                </div>
+              )}
             </div>
 
             {/* Tombol Panah Kiri & Kanan */}
@@ -392,11 +570,11 @@ export function DashboardModule() {
                       Tugas & Deadline
                     </span>
                     <span className="px-2 py-0.5 rounded-full text-[11px] bg-amber-300 text-[#2d180e]">
-                      {pendingTaskCount} Aktif
+                      {pendingTaskCount} Active
                     </span>
                   </div>
                   <p className="text-xs text-amber-100/80 mt-0.5">
-                    Klik untuk melihat daftar tugas berjalan
+                    Active Assignments & Upcoming Deadlines
                   </p>
                 </div>
               </div>
@@ -417,10 +595,10 @@ export function DashboardModule() {
                     <span className="text-sm sm:text-base font-medium text-[#2d180e] tracking-tight">
                       Pengumuman Kelas
                     </span>
-                    <Badge variant="ipb">{pengumumanList.length} Info</Badge>
+                    <Badge variant="ipb">{pengumumanList.length} Updates</Badge>
                   </div>
                   <p className="text-xs text-stone-500 mt-0.5">
-                    Klik untuk membaca informasi terbaru ST04
+                    Class Announcements & Official Information
                   </p>
                 </div>
               </div>
@@ -431,13 +609,18 @@ export function DashboardModule() {
           {/* Bagian Utama: Jadwal Mata Kuliah ST04 */}
           <div className="space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl brown-shade-btn text-white flex items-center justify-center">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl brown-shade-btn text-white flex items-center justify-center shrink-0">
                   <CalendarDays className="w-4 h-4" />
                 </div>
-                <h1 className="text-base sm:text-lg font-medium text-[#2d180e] tracking-tight">
-                  Jadwal Mata Kuliah ST04
-                </h1>
+                <div>
+                  <h1 className="text-base sm:text-lg font-medium text-[#2d180e] tracking-tight leading-tight">
+                    Jadwal Mata Kuliah ST04
+                  </h1>
+                  <p className="text-[11px] text-stone-500">
+                    Weekly Course & Lab Schedule • Semester 1
+                  </p>
+                </div>
               </div>
 
               {/* Filter Pill Hari */}
@@ -523,26 +706,29 @@ export function DashboardModule() {
               className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[#fffcf8] border border-[#dfd0bf] hover:bg-[#f5ebe1] text-xs text-[#3b2216] transition-all cursor-pointer"
             >
               <ArrowLeft className="w-4 h-4 text-[#5c3724]" />
-              <span>Kembali ke Jadwal Kuliah</span>
+              <span>Back to Schedule</span>
             </button>
 
             {isAdmin && (
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => setOpenTaskModal(true)}
-              >
+              <Button variant="primary" size="sm" onClick={handleOpenNewTask}>
                 <Plus className="w-3.5 h-3.5" />
                 <span>Tambah Tugas</span>
               </Button>
             )}
           </div>
 
-          <div className="flex items-center gap-2 px-1">
-            <ClipboardList className="w-5 h-5 text-[#5c3724]" />
-            <h2 className="text-base sm:text-lg font-medium text-[#2d180e]">
-              Daftar Tugas & Deadline ({tasks.length})
-            </h2>
+          <div className="flex items-center gap-2.5 px-1">
+            <div className="w-9 h-9 rounded-xl brown-shade-btn text-white flex items-center justify-center shrink-0">
+              <ClipboardList className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="text-base sm:text-lg font-medium text-[#2d180e] leading-tight">
+                Daftar Tugas & Deadline ({tasks.length})
+              </h2>
+              <p className="text-[11px] text-stone-500">
+                Assignments & Submission Deadlines • ST04
+              </p>
+            </div>
           </div>
 
           {tasks.length === 0 ? (
@@ -600,13 +786,22 @@ export function DashboardModule() {
                           )}
                         </button>
                         {isAdmin && (
-                          <button
-                            onClick={() => deleteJadwal(t.id)}
-                            className="p-1 text-stone-400 hover:text-rose-600 cursor-pointer"
-                            title="Hapus Tugas"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          <>
+                            <button
+                              onClick={() => handleOpenEditTask(t)}
+                              className="p-1 text-stone-400 hover:text-[#5c3724] cursor-pointer"
+                              title="Edit Tugas"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => deleteJadwal(t.id)}
+                              className="p-1 text-stone-400 hover:text-rose-600 cursor-pointer"
+                              title="Hapus Tugas"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>
@@ -634,14 +829,14 @@ export function DashboardModule() {
               className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[#fffcf8] border border-[#dfd0bf] hover:bg-[#f5ebe1] text-xs text-[#3b2216] transition-all cursor-pointer"
             >
               <ArrowLeft className="w-4 h-4 text-[#5c3724]" />
-              <span>Kembali ke Jadwal Kuliah</span>
+              <span>Back to Schedule</span>
             </button>
 
             {isAdmin && (
               <Button
                 variant="primary"
                 size="sm"
-                onClick={() => setOpenPengModal(true)}
+                onClick={handleOpenNewPengumuman}
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Tambah Pengumuman</span>
@@ -649,56 +844,92 @@ export function DashboardModule() {
             )}
           </div>
 
-          <div className="flex items-center gap-2 px-1">
-            <Megaphone className="w-5 h-5 text-[#5c3724]" />
-            <h2 className="text-base sm:text-lg font-medium text-[#2d180e]">
-              Pengumuman Kelas ({pengumumanList.length})
-            </h2>
+          <div className="flex items-center gap-2.5 px-1">
+            <div className="w-9 h-9 rounded-xl brown-shade-btn text-white flex items-center justify-center shrink-0">
+              <Megaphone className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="text-base sm:text-lg font-medium text-[#2d180e] leading-tight">
+                Pengumuman Kelas ({pengumumanList.length})
+              </h2>
+              <p className="text-[11px] text-stone-500">
+                Class Announcements & Official Board • ST04
+              </p>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-            {pengumumanList.map((p, idx) => (
-              <Card
-                key={p.id}
-                className={`p-4 space-y-2 animate-fadeIn stagger-${
-                  (idx % 6) + 1
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5">
-                    <Badge
-                      variant={
-                        p.kategori === 'Akademik'
-                          ? 'ipb'
-                          : p.kategori === 'Keuangan'
-                          ? 'warning'
-                          : 'info'
-                      }
-                    >
-                      {p.kategori}
-                    </Badge>
-                    <span className="text-[11px] text-stone-400">
-                      {formatTanggalIndo(p.tanggal)}
-                    </span>
+          {pengumumanList.length === 0 ? (
+            <Card className="p-8 text-center space-y-2">
+              <div className="text-xs text-stone-500">
+                Belum ada pengumuman saat ini (No active announcements).
+              </div>
+              {isAdmin && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleOpenNewPengumuman}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Buat Pengumuman Baru</span>
+                </Button>
+              )}
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              {pengumumanList.map((p, idx) => (
+                <Card
+                  key={p.id}
+                  className={`p-4 space-y-2.5 animate-fadeIn stagger-${
+                    (idx % 6) + 1
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <Badge
+                        variant={
+                          p.kategori === 'Akademik'
+                            ? 'ipb'
+                            : p.kategori === 'Keuangan'
+                            ? 'warning'
+                            : 'info'
+                        }
+                      >
+                        {p.kategori}
+                      </Badge>
+                      <span className="text-[11px] text-stone-400">
+                        {formatTanggalIndo(p.tanggal)}
+                      </span>
+                    </div>
+                    {isAdmin && (
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => handleOpenEditPengumuman(p)}
+                          className="p-1.5 rounded-lg text-[#5c3724] hover:bg-[#efe3d5] transition-colors cursor-pointer"
+                          title="Edit Pengumuman"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => deletePengumuman(p.id)}
+                          className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                          title="Hapus Pengumuman"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  {isAdmin && (
-                    <button
-                      onClick={() => deletePengumuman(p.id)}
-                      className="text-stone-400 hover:text-rose-600 cursor-pointer"
-                      title="Hapus Pengumuman"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
 
-                <h3 className="text-sm font-medium text-[#2d180e]">
-                  {p.judul}
-                </h3>
-                <p className="text-xs text-stone-600 leading-relaxed">{p.isi}</p>
-              </Card>
-            ))}
-          </div>
+                  <h3 className="text-sm font-medium text-[#2d180e]">
+                    {p.judul}
+                  </h3>
+                  <p className="text-xs text-stone-600 leading-relaxed whitespace-pre-line">
+                    {p.isi}
+                  </p>
+                </Card>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -707,11 +938,12 @@ export function DashboardModule() {
         isOpen={openPhotoModal}
         onClose={() => setOpenPhotoModal(false)}
         title="Tambah Foto Bersama SETEMP4T"
+        subtitle="Add new photo to class gallery slider"
       >
         <form onSubmit={handleAddSlide} className="space-y-3.5">
           <div>
             <label className="block text-xs text-stone-700 mb-1">
-              Pilih Foto dari Perangkat (HP / Laptop)
+              Pilih Foto dari Perangkat (Upload Image)
             </label>
             <input
               type="file"
@@ -723,7 +955,7 @@ export function DashboardModule() {
 
           <div>
             <label className="block text-xs text-stone-700 mb-1">
-              Atau Tempel Link URL Gambar
+              Atau Tempel Link URL Gambar (Image URL)
             </label>
             <Input
               placeholder="https://..."
@@ -734,7 +966,7 @@ export function DashboardModule() {
 
           <div>
             <label className="block text-xs text-stone-700 mb-1">
-              Judul Momen / Foto
+              Judul Momen / Foto (Title)
             </label>
             <Input
               placeholder="Contoh: Foto Bersama seusai Kuliah Biologi"
@@ -745,7 +977,7 @@ export function DashboardModule() {
 
           <div>
             <label className="block text-xs text-stone-700 mb-1">
-              Keterangan Singkat
+              Keterangan Singkat (Caption / Subtitle)
             </label>
             <Input
               placeholder="Contoh: Gedung CCR IPB Dramaga"
@@ -760,25 +992,30 @@ export function DashboardModule() {
               variant="outline"
               onClick={() => setOpenPhotoModal(false)}
             >
-              Batal
+              Cancel
             </Button>
             <Button type="submit" variant="primary" disabled={!photoUrl.trim()}>
-              Simpan ke Slide
+              Save to Gallery
             </Button>
           </div>
         </form>
       </Modal>
 
-      {/* Modal Tambah Tugas */}
+      {/* Modal Tambah / Edit Tugas */}
       <Modal
         isOpen={openTaskModal}
         onClose={() => setOpenTaskModal(false)}
-        title="Tambah Tugas Baru"
+        title={editingTaskId ? 'Edit Tugas & Deadline' : 'Tambah Tugas Baru'}
+        subtitle={
+          editingTaskId
+            ? 'Update assignment details & due date'
+            : 'Create new class assignment'
+        }
       >
         <form onSubmit={handleSaveTask} className="space-y-3.5">
           <div>
             <label className="block text-xs text-stone-700 mb-1">
-              Judul Tugas
+              Judul Tugas (Assignment Title)
             </label>
             <Input
               required
@@ -791,7 +1028,7 @@ export function DashboardModule() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-stone-700 mb-1">
-                Mata Kuliah
+                Mata Kuliah (Course)
               </label>
               <Select
                 value={taskMkId}
@@ -806,7 +1043,7 @@ export function DashboardModule() {
             </div>
             <div>
               <label className="block text-xs text-stone-700 mb-1">
-                Tanggal Deadline
+                Tanggal Deadline (Due Date)
               </label>
               <Input
                 type="date"
@@ -820,7 +1057,7 @@ export function DashboardModule() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-stone-700 mb-1">
-                Hari
+                Hari (Day)
               </label>
               <Select
                 value={taskHari}
@@ -839,7 +1076,7 @@ export function DashboardModule() {
             </div>
             <div>
               <label className="block text-xs text-stone-700 mb-1">
-                Jam
+                Jam (Time)
               </label>
               <Input
                 type="time"
@@ -851,7 +1088,7 @@ export function DashboardModule() {
 
           <div>
             <label className="block text-xs text-stone-700 mb-1">
-              Tempat Pengumpulan
+              Tempat Pengumpulan (Submission Link / Location)
             </label>
             <Input
               required
@@ -862,7 +1099,7 @@ export function DashboardModule() {
 
           <div>
             <label className="block text-xs text-stone-700 mb-1">
-              Keterangan Singkat
+              Keterangan Singkat (Notes)
             </label>
             <Textarea
               rows={2}
@@ -877,28 +1114,37 @@ export function DashboardModule() {
               variant="outline"
               onClick={() => setOpenTaskModal(false)}
             >
-              Batal
+              Cancel
             </Button>
             <Button type="submit" variant="primary">
-              Simpan
+              {editingTaskId ? 'Save Changes' : 'Save Assignment'}
             </Button>
           </div>
         </form>
       </Modal>
 
-      {/* Modal Tambah Pengumuman */}
+      {/* Modal Tambah / Edit Pengumuman */}
       <Modal
         isOpen={openPengModal}
-        onClose={() => setOpenPengModal(false)}
-        title="Tambah Pengumuman"
+        onClose={() => {
+          setOpenPengModal(false);
+          setEditingPengId(null);
+        }}
+        title={editingPengId ? 'Edit Pengumuman' : 'Tambah Pengumuman'}
+        subtitle={
+          editingPengId
+            ? 'Update existing class announcement'
+            : 'Publish a new announcement for ST04'
+        }
       >
         <form onSubmit={handleSavePengumuman} className="space-y-3.5">
           <div>
             <label className="block text-xs text-stone-700 mb-1">
-              Judul
+              Judul Pengumuman (Announcement Title)
             </label>
             <Input
               required
+              placeholder="Contoh: Info Kumpul Praktikum Biologi"
               value={pengJudul}
               onChange={(e) => setPengJudul(e.target.value)}
             />
@@ -907,7 +1153,7 @@ export function DashboardModule() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-stone-700 mb-1">
-                Kategori
+                Kategori (Category)
               </label>
               <Select
                 value={pengKategori}
@@ -922,7 +1168,7 @@ export function DashboardModule() {
             </div>
             <div>
               <label className="block text-xs text-stone-700 mb-1">
-                Prioritas
+                Prioritas (Priority)
               </label>
               <Select
                 value={pengPrioritas}
@@ -930,20 +1176,21 @@ export function DashboardModule() {
                   setPengPrioritas(e.target.value as PrioritasPengumuman)
                 }
               >
-                <option value="Tinggi">Tinggi</option>
-                <option value="Sedang">Sedang</option>
-                <option value="Rendah">Rendah</option>
+                <option value="Tinggi">Tinggi (High)</option>
+                <option value="Sedang">Sedang (Medium)</option>
+                <option value="Rendah">Rendah (Low)</option>
               </Select>
             </div>
           </div>
 
           <div>
             <label className="block text-xs text-stone-700 mb-1">
-              Isi Informasi
+              Isi Informasi (Announcement Details)
             </label>
             <Textarea
               required
-              rows={3}
+              rows={4}
+              placeholder="Tuliskan isi pengumuman lengkap..."
               value={pengIsi}
               onChange={(e) => setPengIsi(e.target.value)}
             />
@@ -953,12 +1200,15 @@ export function DashboardModule() {
             <Button
               type="button"
               variant="outline"
-              onClick={() => setOpenPengModal(false)}
+              onClick={() => {
+                setOpenPengModal(false);
+                setEditingPengId(null);
+              }}
             >
-              Batal
+              Cancel
             </Button>
             <Button type="submit" variant="primary">
-              Simpan
+              {editingPengId ? 'Save Changes' : 'Publish Announcement'}
             </Button>
           </div>
         </form>

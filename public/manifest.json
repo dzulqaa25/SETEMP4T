@@ -1,0 +1,9 @@
+{
+  "name": "SETEMP4T — Portal Kelas ST04 IPB",
+  "short_name": "SETEMP4T",
+  "description": "Pusat informasi, pengumuman, tugas, kas, dan kelompok Kelas ST04 IPB University.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6eee3",
+  "theme_color": "#4e2e1d"
+}

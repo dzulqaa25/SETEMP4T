@@ -42,6 +42,8 @@ const FAKULTAS_OPTIONS: FakultasIPB[] = [
 export function AdminPanelModule() {
   const {
     isAdmin,
+    canEditMahasiswaProfile,
+    currentUser,
     unlockAdminWithKey,
     lockAdmin,
     mahasiswaList,
@@ -52,6 +54,7 @@ export function AdminPanelModule() {
     addMataKuliah,
     deleteMataKuliah,
     resetToDefaultSeed,
+    showToast,
   } = useApp();
 
   const [accessKeyInput, setAccessKeyInput] = useState('');
@@ -132,6 +135,14 @@ export function AdminPanelModule() {
   }
 
   const handleOpenAddMhs = () => {
+    if (!canEditMahasiswaProfile) {
+      showToast(
+        'Akses Ditolak',
+        'Hanya Moch Dzulqarnain Serdy (A2401261152) yang dapat mengedit atau menambah profil mahasiswa.',
+        'warning'
+      );
+      return;
+    }
     setEditingMhs(null);
     setNim(`A2401261${String(mahasiswaList.length + 1).padStart(3, '0')}`);
     setNamaLengkap('');
@@ -143,6 +154,14 @@ export function AdminPanelModule() {
   };
 
   const handleOpenEditMhs = (m: Mahasiswa) => {
+    if (!canEditMahasiswaProfile) {
+      showToast(
+        'Akses Ditolak',
+        'Hanya Moch Dzulqarnain Serdy (A2401261152) yang dapat mengedit profil mahasiswa.',
+        'warning'
+      );
+      return;
+    }
     setEditingMhs(m);
     setNim(m.nim);
     setNamaLengkap(m.namaLengkap);
@@ -253,10 +272,16 @@ export function AdminPanelModule() {
 
         <div className="flex items-center gap-2">
           {activeTab === 'mahasiswa' ? (
-            <Button variant="primary" size="sm" onClick={handleOpenAddMhs}>
-              <UserPlus className="w-3.5 h-3.5" />
-              <span>Tambah</span>
-            </Button>
+            canEditMahasiswaProfile ? (
+              <Button variant="primary" size="sm" onClick={handleOpenAddMhs}>
+                <UserPlus className="w-3.5 h-3.5" />
+                <span>Tambah Mahasiswa</span>
+              </Button>
+            ) : (
+              <Badge variant="neutral">
+                Edit Profil Khusus Moch Dzulqarnain Serdy (A2401261152)
+              </Badge>
+            )
           ) : (
             <Button
               variant="primary"
@@ -267,14 +292,16 @@ export function AdminPanelModule() {
               <span>Tambah MK</span>
             </Button>
           )}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={resetToDefaultSeed}
-            title="Reset Data Default"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-          </Button>
+          {canEditMahasiswaProfile && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={resetToDefaultSeed}
+              title="Reset Data Default"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </Button>
+          )}
           <Button variant="secondary" size="sm" onClick={lockAdmin}>
             Kunci Admin
           </Button>
@@ -283,6 +310,14 @@ export function AdminPanelModule() {
 
       {activeTab === 'mahasiswa' ? (
         <Card className="p-4 space-y-3">
+          {!canEditMahasiswaProfile && (
+            <div className="p-3 rounded-xl bg-[#faf3eb] border border-[#dfc9b0] text-xs text-[#5c3724]">
+              Anda login sebagai <strong>{currentUser.namaLengkap}</strong> (
+              {currentUser.nim}). Pengeditan, penambahan, dan penghapusan profil
+              mahasiswa hanya dapat dilakukan oleh{' '}
+              <strong>Moch Dzulqarnain Serdy (A2401261152)</strong>.
+            </div>
+          )}
           <div className="relative">
             <Search className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <Input
@@ -313,22 +348,24 @@ export function AdminPanelModule() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    onClick={() => handleOpenEditMhs(m)}
-                    className="p-1.5 rounded-lg text-stone-500 hover:bg-[#f5ebe1] cursor-pointer"
-                    title="Edit"
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={() => deleteMahasiswa(m.id)}
-                    className="p-1.5 rounded-lg text-stone-400 hover:text-rose-600 cursor-pointer"
-                    title="Hapus"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+                {canEditMahasiswaProfile && (
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() => handleOpenEditMhs(m)}
+                      className="p-1.5 rounded-lg text-stone-500 hover:bg-[#f5ebe1] cursor-pointer"
+                      title="Edit Profil Mahasiswa"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => deleteMahasiswa(m.id)}
+                      className="p-1.5 rounded-lg text-stone-400 hover:text-rose-600 cursor-pointer"
+                      title="Hapus Mahasiswa"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>

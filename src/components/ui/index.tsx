@@ -1,6 +1,7 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { cn, getInitials } from '@/lib/utils';
 import { X } from 'lucide-react';
 
@@ -269,25 +270,26 @@ export function Modal({
   children: React.ReactNode;
   maxWidth?: string;
 }) {
-  if (!isOpen) return null;
+  const [mounted, setMounted] = useState(false);
 
-  return (
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!isOpen || !mounted) return null;
+
+  return createPortal(
     <div
       onClick={onClose}
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-stone-950/55 backdrop-blur-xs animate-fadeIn"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3.5 sm:p-4 bg-stone-950/60 backdrop-blur-xs"
     >
       <div
         onClick={(e) => e.stopPropagation()}
         className={cn(
-          'bg-white rounded-t-3xl sm:rounded-2xl border border-stone-200 shadow-2xl w-full overflow-hidden max-h-[92vh] sm:max-h-[88vh] flex flex-col animate-sheet',
+          'bg-white rounded-2xl border border-stone-200 shadow-2xl w-full overflow-hidden max-h-[90vh] flex flex-col animate-sheet',
           maxWidth
         )}
       >
-        {/* Drag Handle Indicator khusus Mobile */}
-        <div className="sm:hidden pt-2.5 pb-1 flex justify-center bg-[#faf5ef]">
-          <div className="w-10 h-1.5 rounded-full bg-stone-300" />
-        </div>
-
         <div className="flex items-start justify-between px-5 sm:px-6 py-3.5 sm:py-4 border-b border-stone-200/70 bg-[#faf5ef]">
           <div className="pr-3">
             <h3 className="text-sm sm:text-base font-extrabold text-stone-900">
@@ -307,11 +309,10 @@ export function Modal({
             <X className="w-4 h-4" />
           </button>
         </div>
-        <div className="p-5 sm:p-6 overflow-y-auto pb-8 sm:pb-6">
-          {children}
-        </div>
+        <div className="p-4 sm:p-6 overflow-y-auto">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
